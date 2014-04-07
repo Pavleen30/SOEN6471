@@ -185,66 +185,11 @@ void song::savePos()
 	}
 }
 
-
-
-
-void song::processNextBuffer()
+bool song::loopPointsEnabled()
 {
-	if( m_playing == false )
-	{
-		return;
-	}
-
-	TrackList track_list;
-	int tco_num = -1;
-
-	switch( m_playMode )
-	{
-		case Mode_PlaySong:
-			track_list = tracks();
-			// at song-start we have to reset the LFOs
-			if( m_playPos[Mode_PlaySong] == 0 )
-			{
-				EnvelopeAndLfoParameters::instances()->reset();
-			}
-			break;
-
-		case Mode_PlayTrack:
-			track_list.push_back( m_trackToPlay );
-			break;
-
-		case Mode_PlayBB:
-			if( engine::getBBTrackContainer()->numOfBBs() > 0 )
-			{
-				tco_num = engine::getBBTrackContainer()->
-								currentBB();
-				track_list.push_back( bbTrack::findBBTrack(
-								tco_num ) );
-			}
-			break;
-
-		case Mode_PlayPattern:
-			if( m_patternToPlay != NULL )
-			{
-				tco_num = m_patternToPlay->getTrack()->
-						getTCONum( m_patternToPlay );
-				track_list.push_back(
-						m_patternToPlay->getTrack() );
-			}
-			break;
-
-		default:
-			return;
-
-	}
-
-	if( track_list.empty() == true )
-	{
-		return;
-	}
-
 	// check for looping-mode and act if necessary
 	timeLine * tl = m_playPos[m_playMode].m_timeLine;
+	
 	bool check_loop = tl != NULL && m_exporting == false &&
 				tl->loopPointsEnabled();
 	if( check_loop )
@@ -257,7 +202,124 @@ void song::processNextBuffer()
 						tl->loopBegin().getTicks() );
 		}
 	}
+	return check_loop;
+}
 
+void song::processNextBufferPattern()
+{
+	int tco_num = -1;
+    TrackList track_list;
+
+	if( tracks().empty() == true )
+	{
+		return;
+	}
+
+	if( m_patternToPlay != NULL )
+	{
+		tco_num = m_patternToPlay->getTrack()->
+				getTCONum( m_patternToPlay );
+		track_list.push_back(
+				m_patternToPlay->getTrack() );
+	}
+
+	loopInBuffer(loopPointsEnabled(),tco_num);
+
+}
+
+void song::processNextBufferBB()
+{
+    TrackList track_list;
+	int tco_num = -1;
+
+	if( tracks().empty() == true )
+	{
+		return;
+	}
+
+	if( engine::getBBTrackContainer()->numOfBBs() > 0 )
+	{
+	    tco_num = engine::getBBTrackContainer()->
+					    currentBB();
+	    track_list.push_back( bbTrack::findBBTrack(
+					    tco_num ) );
+	}
+
+	loopInBuffer(loopPointsEnabled(),tco_num);
+
+}
+
+void song::processNextBufferTrack()
+{
+    int tco_num = -1;
+
+	TrackList track_list = tracks();
+
+	track_list.push_back( m_trackToPlay );
+
+	if( track_list.empty() == true )
+	{
+		return;
+	}
+
+
+    loopInBuffer(loopPointsEnabled(), tco_num);
+
+}
+
+void song::processNextBufferSong()
+{
+    int tco_num = -1;
+	TrackList track_list = tracks();
+
+	// at song-start we have to reset the LFOs
+	if( m_playPos[Mode_PlaySong] == 0 )
+	{
+		EnvelopeAndLfoParameters::instances()->reset();
+	}
+
+	if( track_list.empty() == true )
+	{
+		return;
+	}
+	
+    loopInBuffer(loopPointsEnabled(), tco_num);
+	
+	}
+
+
+int song::getMaxTact()
+{
+    timeLine * tl = m_playPos[m_playMode].m_timeLine;
+	// per default we just continue playing even if
+	// there's no more stuff to play
+	// (song-play-mode)
+	int max_tact = m_playPos[m_playMode].getTact()
+						+ 2;
+	// then decide whether to go over to next tact
+	// or to loop back to first tact
+	if( m_playMode == Mode_PlayBB )
+	{
+		max_tact = engine::getBBTrackContainer()
+				->lengthOfCurrentBB();
+	}
+	else if( m_playMode == Mode_PlayPattern &&
+		m_loopPattern == true &&
+		tl != NULL &&
+		tl->loopPointsEnabled() == false )
+	{
+		max_tact = m_patternToPlay->length()
+					.getTact();
+	}
+
+	return max_tact;
+}
+
+void song::loopInBuffer(bool check_loop, int p_tco_num = -1)
+{
+    TrackList track_list;
+	timeLine * tl = m_playPos[m_playMode].m_timeLine;
+	
 	f_cnt_t total_frames_played = 0;
 	const float frames_per_tick = engine::framesPerTick();
 
@@ -282,25 +344,8 @@ void song::processNextBuffer()
 				// per default we just continue playing even if
 				// there's no more stuff to play
 				// (song-play-mode)
-				int max_tact = m_playPos[m_playMode].getTact()
-									+ 2;
-
-				// then decide whether to go over to next tact
-				// or to loop back to first tact
-				if( m_playMode == Mode_PlayBB )
-				{
-					max_tact = engine::getBBTrackContainer()
-							->lengthOfCurrentBB();
-				}
-				else if( m_playMode == Mode_PlayPattern &&
-					m_loopPattern == true &&
-					tl != NULL &&
-					tl->loopPointsEnabled() == false )
-				{
-					max_tact = m_patternToPlay->length()
-								.getTact();
-				}
-
+				int max_tact = getMaxTact();
+				
 				// end of played object reached?
 				if( m_playPos[m_playMode].getTact() + 1
 								>= max_tact )
@@ -357,20 +402,19 @@ void song::processNextBuffer()
 
 		if( (f_cnt_t) current_frame == 0 )
 		{
-			if( m_playMode == Mode_PlaySong )
-			{
-				m_globalAutomationTrack->play(
-						m_playPos[m_playMode],
-						played_frames,
-						total_frames_played, tco_num );
-			}
+			m_globalAutomationTrack->play(
+					m_playPos[m_playMode],
+					played_frames,
+					total_frames_played,
+					p_tco_num);
 
 			// loop through all tracks and play them
 			for( int i = 0; i < track_list.size(); ++i )
 			{
 				track_list[i]->play( m_playPos[m_playMode],
 						played_frames,
-						total_frames_played, tco_num );
+						total_frames_played,
+						p_tco_num);
 			}
 		}
 
@@ -384,8 +428,37 @@ void song::processNextBuffer()
 	}
 }
 
+void song::processNextBuffer()
+{
+	if( m_playing == false )
+	{
+		return;
+	}
 
+	switch( m_playMode )
+	{
+		case Mode_PlaySong:
+			processNextBufferSong();
+			return;
 
+		case Mode_PlayTrack:
+			processNextBufferTrack();
+			return;
+
+		case Mode_PlayBB:
+			processNextBufferBB();
+			return;
+
+		case Mode_PlayPattern:
+			processNextBufferPattern();
+			return;
+
+		default:
+			return;
+
+	}
+
+}
 
 void song::playSong()
 {
@@ -920,7 +993,8 @@ void song::loadProject( const QString & _file_name )
 		{
 			if( node.nodeName() == "trackcontainer" )
 			{
-				( (JournallingObject *)( this ) )->restoreState( node.toElement() );
+				( (JournallingObject *)( this ) )->
+					restoreState( node.toElement() );
 			}
 			else if( node.nodeName() == "controllers" )
 			{
@@ -932,25 +1006,37 @@ void song::loadProject( const QString & _file_name )
 			}
 			else if( engine::hasGUI() )
 			{
-				if( node.nodeName() == engine::getControllerRackView()->nodeName() )
+				if( node.nodeName() ==
+					engine::getControllerRackView()->nodeName() )
 				{
-					engine::getControllerRackView()->restoreState( node.toElement() );
+					engine::getControllerRackView()->
+						restoreState( node.toElement() );
 				}
 				else if( node.nodeName() == engine::pianoRoll()->nodeName() )
 				{
 					engine::pianoRoll()->restoreState( node.toElement() );
 				}
-				else if( node.nodeName() == engine::automationEditor()->nodeName() )
+				else if( node.nodeName() ==
+					engine::automationEditor()->
+								nodeName() )
 				{
-					engine::automationEditor()->restoreState( node.toElement() );
+					engine::automationEditor()->
+						restoreState( node.toElement() );
 				}
-				else if( node.nodeName() == engine::getProjectNotes()->nodeName() )
+				else if( node.nodeName() ==
+						engine::getProjectNotes()->
+								nodeName() )
 				{
-					 engine::getProjectNotes()->SerializingObject::restoreState( node.toElement() );
+					 engine::getProjectNotes()->
+			SerializingObject::restoreState( node.toElement() );
 				}
-				else if( node.nodeName() == m_playPos[Mode_PlaySong].m_timeLine->nodeName() )
+				else if( node.nodeName() ==
+						m_playPos[Mode_PlaySong].
+							m_timeLine->nodeName() )
 				{
-					m_playPos[Mode_PlaySong].m_timeLine->restoreState( node.toElement() );
+					m_playPos[Mode_PlaySong].
+						m_timeLine->restoreState(
+							node.toElement() );
 				}
 			}
 		}
@@ -1006,13 +1092,15 @@ bool song::saveProjectFile( const QString & _filename )
 		engine::getControllerRackView()->saveState( dataFile, dataFile.content() );
 		engine::pianoRoll()->saveState( dataFile, dataFile.content() );
 		engine::automationEditor()->saveState( dataFile, dataFile.content() );
-		engine::getProjectNotes()->SerializingObject::saveState( dataFile, dataFile.content() );
-		m_playPos[Mode_PlaySong].m_timeLine->saveState( dataFile, dataFile.content() );
+		engine::getProjectNotes()->
+			SerializingObject::saveState( dataFile, dataFile.content() );
+		m_playPos[Mode_PlaySong].m_timeLine->saveState(
+							dataFile, dataFile.content() );
 	}
 
 	saveControllerStates( dataFile, dataFile.content() );
 
-	return dataFile.writeFile( _filename );
+    return dataFile.writeFile( _filename );
 }
 
 
@@ -1157,7 +1245,8 @@ void song::exportProject(bool multiExport)
 		efd.setFileMode( FileDialog::AnyFile );
 		int idx = 0;
 		QStringList types;
-		while( __fileEncodeDevices[idx].m_fileFormat != ProjectRenderer::NumFileFormats )
+		while( __fileEncodeDevices[idx].m_fileFormat !=
+						ProjectRenderer::NumFileFormats )
 		{
 			types << tr( __fileEncodeDevices[idx].m_description );
 			++idx;
@@ -1208,7 +1297,8 @@ void song::setModified()
 	{
 		m_modified = true;
 		if( engine::mainWindow() &&
-			QThread::currentThread() == engine::mainWindow()->thread() )
+			QThread::currentThread() ==
+					engine::mainWindow()->thread() )
 		{
 			engine::mainWindow()->resetWindowTitle();
 		}
@@ -1243,6 +1333,14 @@ void song::removeController( Controller * _controller )
 		}
 		emit dataChanged();
 	}
+}
+
+
+
+
+bool song::isLoadingProject()
+{
+	return m_loadingProject;
 }
 
 
