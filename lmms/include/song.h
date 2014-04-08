@@ -210,6 +210,7 @@ public:
 	void loadProject( const QString & _filename );
 	bool guiSaveProject();
 	bool guiSaveProjectAs( const QString & _filename );
+<<<<<<< HEAD
 	bool saveProjectFile( const QString & _filename );
 
 	const QString & projectFileName() const
@@ -223,16 +224,36 @@ public:
 	}
 
 	bool isModified() const
+=======
+    bool saveProjectFile( const QString & _filename );
+	inline const QString & projectFileName() const
+	{
+		return m_fileName;
+	}
+	inline bool isLoadingProject() const
+	{
+		return m_loadingProject;
+	}
+	inline bool isModified() const
+>>>>>>> origin/Long-Method
 	{
 		return m_modified;
 	}
 
+<<<<<<< HEAD
 	virtual QString nodeName() const
+=======
+	inline virtual QString nodeName() const
+>>>>>>> origin/Long-Method
 	{
 		return "song";
 	}
 
+<<<<<<< HEAD
 	virtual bool fixedTCOs() const
+=======
+	virtual inline bool fixedTCOs() const
+>>>>>>> origin/Long-Method
 	{
 		return false;
 	}
@@ -277,6 +298,11 @@ public slots:
 
 	void addBBTrack();
 
+<<<<<<< HEAD
+=======
+	bool isLoadingProject();
+
+>>>>>>> origin/Long-Method
 
 private slots:
 	void insertBar();
@@ -314,6 +340,17 @@ private:
 
 	void saveControllerStates( QDomDocument & _doc, QDomElement & _this );
 	void restoreControllerStates( const QDomElement & _this );
+<<<<<<< HEAD
+=======
+	void CheckIfLoop();
+	void loopInBuffer(bool, int);
+	bool loopPointsEnabled();
+	void processNextBufferSong();
+	void processNextBufferTrack();
+	void processNextBufferBB();
+	void processNextBufferPattern();
+	int getMaxTact();
+>>>>>>> origin/Long-Method
 
 
 	AutomationTrack * m_globalAutomationTrack;
